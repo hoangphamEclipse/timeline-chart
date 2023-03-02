@@ -1,9 +1,11 @@
 import { timeGraphEntries } from "./test-entries";
-import { timeGraphStates } from "./test-states";
+//import { timeGraphStates } from "./test-states";
+import { timeGraphStatesTest2 } from "./test-states-2-new";
 import { timeGraphArrows } from "./test-arrows";
 import { TimelineChart } from "timeline-chart/lib/time-graph-model";
+import { timeGraphRowIds } from "./test-ids";
 
-export namespace TestData {
+export namespace TestDataNew {
     /**
      * Basic entry interface
      */
@@ -21,7 +23,7 @@ export namespace TestData {
         /**
          * Array of string that represant the content of each column
          */
-        name: string[];
+        labels: string[];
     }
 
     /**
@@ -31,17 +33,17 @@ export namespace TestData {
         /**
          * Start time of the entry
          */
-        startTime: number;
+        start: number;
 
         /**
          * End time of the entry
          */
-        endTime: number;
+        end: number;
 
         /**
          * Indicate if the entry will have row data
          */
-        hasRowModel: boolean;
+        hasData: boolean;
     }
 
     /**
@@ -71,6 +73,14 @@ export namespace TestData {
         annotations: TimeGraphAnnotation[];
     }
 
+    export interface TimeGraphStateStyle {
+        color?: number;
+        opacity?: number;
+        height?: number;
+        borderWidth?: number;
+        borderColor?: number;
+    }
+
     /**
      * Time graph state
      */
@@ -78,19 +88,21 @@ export namespace TestData {
         /**
          * Start time of the state
          */
-        startTime: number;
+        start: number;
 
-        duration: number;
+        end: number;
 
         /**
          * Label to apply to the state
          */
-        label: string | null;
+        label?: string | undefined;
+
+        style?: TimeGraphStateStyle;
 
         /**
          * Values associated to the state
          */
-        value: number;
+        //value: number;
 
     }
 
@@ -150,32 +162,31 @@ export namespace TestData {
 }
 
 export class TestDataProvider {
-    protected absoluteStart: bigint;
-    protected totalLength: bigint;
+    public absoluteStart: bigint;
+    public totalLength: bigint;
     protected timeGraphEntries: object[];
     protected timeGraphRows: object[];
     protected canvasDisplayWidth: number;
 
     constructor(canvasDisplayWidth: number) {
         this.timeGraphEntries = timeGraphEntries.model.entries;
-        this.timeGraphRows = timeGraphStates.model.rows;
+        this.timeGraphRows = timeGraphStatesTest2.model.rows;
         this.totalLength = BigInt(0);
 
         this.canvasDisplayWidth = canvasDisplayWidth;
 
-        this.timeGraphEntries.forEach((entry: TestData.TimeGraphEntry, rowIndex: number) => {
-            const row = timeGraphStates.model.rows.find(row => row.entryID === entry.id);
+        this.timeGraphEntries.forEach((entry: TestDataNew.TimeGraphEntry, rowIndex: number) => {
+            const row = timeGraphStatesTest2.model.rows.find(row => row.entryId === entry.id);
             if (!this.absoluteStart) {
-                this.absoluteStart = BigInt(entry.startTime);
-            } else if (BigInt(entry.startTime) < this.absoluteStart) {
-                this.absoluteStart = BigInt(entry.startTime);
+                this.absoluteStart = BigInt(entry.start);
+            } else if (BigInt(entry.start) < this.absoluteStart) {
+                this.absoluteStart = BigInt(entry.start);
             }
             if (row) {
-                row.states.forEach((state: TestData.TimeGraphState, stateIndex: number) => {
-                    if (state.value > 0) {
-                        const end = BigInt(state.startTime + state.duration - entry.startTime);
-                        this.totalLength = end > this.totalLength ? end : this.totalLength;
-                    }
+                // @ts-ignore
+                row.states.forEach((state: TestDataNew.TimeGraphState, stateIndex: number) => {
+                    const end = BigInt(state.end - entry.start);
+                    this.totalLength = end > this.totalLength ? end : this.totalLength;
                 });
             }
         })
@@ -189,96 +200,68 @@ export class TestDataProvider {
         return rowIds;
     }
 
-    getData(opts: { range?: TimelineChart.TimeGraphRange, resolution?: number }): TimelineChart.TimeGraphModel {
+    fetchTimeGraphData(opts: { range?: TimelineChart.TimeGraphRange, resolution?: number }): TimelineChart.TimeGraphModel {
         const rows: TimelineChart.TimeGraphRowModel[] = [];
-        const range = opts.range || { start: BigInt(0), end: this.totalLength };
-        const resolution = opts.resolution || Number(this.totalLength) / this.canvasDisplayWidth;
-        const commonRow = timeGraphStates.model.rows.find(row => row.entryId === -1);
-        const _rangeEvents = commonRow?.annotations;
         const rangeEvents: TimelineChart.TimeGraphAnnotation[] = [];
-        const startTime = BigInt(1332170682440133097);
-        _rangeEvents?.forEach((annotation: any, annotationIndex: number) => {
-            const start = BigInt(annotation.range.start) - startTime;
-            if (range.start < start && range.end > start) {
-                rangeEvents.push({
-                    id: annotation.id,
-                    category: annotation.category,
-                    range: {
-                        start: BigInt(annotation.range.start) - this.absoluteStart,
-                        end: BigInt(annotation.range.end) - this.absoluteStart
-                    },
-                    label: annotation.label,
-                    data: annotation.data
-                });
-            }
-        });
 
+        const chartStart = this.absoluteStart;
+        const rowIds = timeGraphRowIds.ids;
+        const orderedRows = this.timeGraphRowsOrdering(rowIds);
         timeGraphEntries.model.entries.forEach((entry: any, rowIndex: number): void => {
+            let gapStyle;
+            if (!entry.style) {
+                gapStyle = this.getDefaultForGapStyle();
+            } else {
+                gapStyle = entry.style;
+            }
+
             const states: TimelineChart.TimeGraphState[] = [];
             const annotations: TimelineChart.TimeGraphAnnotation[] = [];
-            const row = timeGraphStates.model.rows.find(row => row.entryID === entry.id);
-            let hasStates = false;
-            let prevPossibleState = BigInt(0);
-            let nextPossibleState = this.totalLength;
+            const row = orderedRows.find(row => row.entryId === entry.id);
+            let prevPossibleState = entry.start;
+            let nextPossibleState = entry.end;
             if (row) {
-                hasStates = !!row.states.length;
                 row.states.forEach((state: any, stateIndex: number) => {
-                    if (state.value > 0 && state.duration * (1 / resolution) > 1) {
-                        const start = BigInt(state.startTime - entry.startTime);
-                        const end = BigInt(state.startTime + state.duration - entry.startTime);
-                        if (end > range.start && start < range.end) {
-                            states.push({
-                                id: 'el_' + rowIndex + '_' + stateIndex,
-                                label: state.label,
-                                range: { start, end },
-                                data: { value: state.value, style: {}}
-                            });
+                    const end = BigInt(state.end) - chartStart;
+                    states.push({
+                        id: row.entryId + '-' + stateIndex,
+                        label: state.label,
+                        range: {
+                            start: BigInt(state.start) - chartStart,
+                            end
+                        },
+                        data: {
+                            style: state.style
                         }
-                    }
+                    });
+                    //this.totalRange = this.totalRange < end ? end : this.totalRange;
                     if (stateIndex === 0) {
-                        prevPossibleState = BigInt(state.startTime - entry.startTime);
+                        prevPossibleState = BigInt(state.start) - chartStart;
                     }
                     if (stateIndex === row.states.length - 1) {
-                        nextPossibleState = BigInt(state.startTime + state.duration - entry.startTime);
+                        nextPossibleState = BigInt(state.end) - chartStart;
                     }
                 });
 
-                const _annotations = row.annotations;
-                if (!!_annotations) {
-                    _annotations.forEach((annotation: any, annotationIndex: number) => {
-                        const start = BigInt(annotation.range.start - entry.startTime);
-                        if (range.start < start && range.end > start) {
-                            annotations.push({
-                                id: annotation.id,
-                                category: annotation.category,
-                                range: {
-                                    start: BigInt(annotation.range.start) - this.absoluteStart,
-                                    end: BigInt(annotation.range.end) - this.absoluteStart
-                                },
-                                label: annotation.label,
-                                data: annotation.data
-                            });
-                        }
+                if (states.length > 0) {
+                    rows.push({
+                        id: entry.id,
+                        name: entry.labels[0],
+                        range: {
+                            start: BigInt(entry.start) - chartStart,
+                            end: BigInt(entry.end) - chartStart
+                        },
+                        states,
+                        annotations,
+                        data: {
+                            type: entry.type
+                        },
+                        prevPossibleState,
+                        nextPossibleState,
+                        gapStyle
                     });
                 }
-
             }
-            rows.push({
-                id: entry.id,
-                name: entry.name[0],
-                range: {
-                    start: BigInt(0),
-                    end: BigInt(entry.endTime - entry.startTime)
-                },
-                states,
-                annotations,
-                data: {
-                    type: entry.type,
-                    hasStates
-                },
-                prevPossibleState,
-                nextPossibleState
-            });
         });
         let arrows: TimelineChart.TimeGraphArrow[] = [];
         timeGraphArrows.forEach(arrow => {
@@ -298,6 +281,37 @@ export class TestDataProvider {
             rows,
             rangeEvents,
             totalLength: this.totalLength
+        };
+    }
+    
+    private timeGraphRowsOrdering(orderedIds: number[]): TestDataNew.TimeGraphRow[] {
+        const newTimeGraphRows: TestDataNew.TimeGraphRow[] = [];
+
+        orderedIds.forEach(id => {
+            
+            // @ts-ignore
+            const timeGraphRow = this.timeGraphRows.find(row => row.entryId === id);
+            
+            if (timeGraphRow) {
+                const newRow = timeGraphRow as TestDataNew.TimeGraphRow;
+                newTimeGraphRows.push(newRow);
+            } else {
+                const emptyRow: TestDataNew.TimeGraphRow = { states: [{ start: 0, end: 0, label: '' }], entryId: id, annotations: [] };
+                newTimeGraphRows.push(emptyRow);
+            }
+        });
+
+        return newTimeGraphRows;
+    }
+
+    private getDefaultForGapStyle() {
+        // Default color and height for the GAP state
+        return {
+            parentKey: '',
+            values: {
+                'background-color': '#CACACA',
+                height: 1.0
+            }
         };
     }
 }

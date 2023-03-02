@@ -7,7 +7,6 @@ import { TimeGraphChartCursors } from "timeline-chart/lib/layer/time-graph-chart
 import { TimeGraphChartSelectionRange } from "timeline-chart/lib/layer/time-graph-chart-selection-range";
 import { TimeGraphAxisCursors } from "timeline-chart/lib/layer/time-graph-axis-cursors";
 import { TimeGraphContainer } from "timeline-chart/lib/time-graph-container";
-// import { timeGraph } from "timeline-chart/lib/test-data";
 import { TimelineChart } from "timeline-chart/lib/time-graph-model";
 import { TimeGraphStateStyle } from "timeline-chart/lib/components/time-graph-state";
 import { TestDataProvider } from "./test-data-provider";
@@ -17,14 +16,15 @@ import { TimeGraphChartArrows } from "timeline-chart/lib/layer/time-graph-chart-
 import { TimeGraphRangeEventsLayer } from "timeline-chart/lib/layer/time-graph-range-events-layer";
 
 const styleConfig = {
-    mainWidth: 1000,
-    mainHeight: 300,
+    mainWidth: 1800,
+    mainHeight: 820,
     naviBackgroundColor: 0xf7eaaf,
     chartBackgroundColor: 0xf9f6e8,
     cursorColor: 0xb77f09
 }
 
 const styleMap = new Map<string, TimeGraphStateStyle>();
+const rowHeight = 16;
 
 const container = document.getElementById('main');
 if (!container) {
@@ -34,30 +34,47 @@ container.innerHTML = '';
 container.style.width = styleConfig.mainWidth + "px";
 
 const testDataProvider = new TestDataProvider(styleConfig.mainWidth);
-let timeGraph = testDataProvider.getData({});
-const unitController = new TimeGraphUnitController(timeGraph.totalLength);
-unitController.worldRenderFactor = 3;
+let timeGraph = testDataProvider.fetchTimeGraphData({});
+const traceStart = testDataProvider.absoluteStart;
+// const testRange = {
+//     start: BigInt(1673902684000000000) - traceStart,
+//     end: BigInt(1673902684500000000) - traceStart
+// } as TimelineChart.TimeGraphRange ;
+
+const testRange = {
+    start: BigInt(1673902683874348300) - traceStart,
+    end: BigInt(1673902684630067200) - traceStart
+} as TimelineChart.TimeGraphRange ;
+
+const worldRange = {
+    start: BigInt(176654678),
+    end: BigInt(935575987)
+} as TimelineChart.TimeGraphRange ;
+
+const unitController = new TimeGraphUnitController(timeGraph.totalLength, testRange);
+//unitController.viewRange = testRange;
 unitController.numberTranslator = (theNumber: bigint) => {
-    let num = theNumber.toString();
-    if (num.length > 6) {
-        num = num.slice(0, -6) + ':' + num.slice(-6);
-    }
-    if (num.length > 3) {
-        num = num.slice(0, -3) + ':' + num.slice(-3);
-    }
-    return num;
+    const originalStart = traceStart;
+    theNumber += originalStart;
+    const zeroPad = (num: bigint) => String(num).padStart(3, '0');
+    const seconds = theNumber / BigInt(1000000000);
+    const millis = zeroPad((theNumber / BigInt(1000000)) % BigInt(1000));
+    const micros = zeroPad((theNumber / BigInt(1000)) % BigInt(1000));
+    const nanos = zeroPad(theNumber % BigInt(1000));
+    return seconds + '.' + millis + ' ' + micros + ' ' + nanos;
 };
+unitController.worldRenderFactor = 0.25;
 
 const providers = {
     rowProvider: () => {
         return {
-            rowIds : testDataProvider.getRowIds()
+            rowIds : testDataProvider.getRowIds() 
         };
     },
     dataProvider: (range: TimelineChart.TimeGraphRange, resolution: number) => {
         const newRange: TimelineChart.TimeGraphRange = range;
         const newResolution: number = resolution * 0.1;
-        timeGraph = testDataProvider.getData({ range: newRange, resolution: newResolution });
+        timeGraph = testDataProvider.fetchTimeGraphData({ range: newRange, resolution: newResolution });
         return {
             rows: timeGraph.rows,
             range: newRange,
@@ -112,7 +129,6 @@ const providers = {
     }
 }
 
-const rowHeight = 16;
 const totalHeight = timeGraph.rows.length * rowHeight;
 const rowController = new TimeGraphRowController(rowHeight, totalHeight);
 
@@ -160,21 +176,21 @@ timeGraphChartContainer.addLayers([timeGraphChartGridLayer, timeGraphChart,
     timeGraphChartCursors, timeGraphChartRangeEvents]);
 
 timeGraphChart.registerMouseInteractions({
-    click: el => {
-        console.log('click: ' + el.constructor.name, el.model);
-    },
-    mouseover: el => {
-        console.log('mouseover: ' + el.constructor.name, el.model);
-    },
-    mouseout: el => {
-        console.log('mouseout: ' + el.constructor.name, el.model);
-    },
-    mousedown: el => {
-        console.log('mousedown: ' + el.constructor.name, el.model);
-    },
-    mouseup: el => {
-        console.log('mouseup: ' + el.constructor.name, el.model);
-    }
+    // click: el => {
+    //     console.log('click: ' + el.constructor.name, el.model);
+    // },
+    // mouseover: el => {
+    //     console.log('mouseover: ' + el.constructor.name, el.model);
+    // },
+    // mouseout: el => {
+    //     console.log('mouseout: ' + el.constructor.name, el.model);
+    // },
+    // mousedown: el => {
+    //     console.log('mousedown: ' + el.constructor.name, el.model);
+    // },
+    // mouseup: el => {
+    //     console.log('mouseup: ' + el.constructor.name, el.model);
+    // }
 });
 
 timeGraphChartArrows.addArrows(timeGraph.arrows, testDataProvider.getRowIds());
@@ -212,3 +228,16 @@ if (vscrollElement) {
     verticalScrollContainer.addLayers([vscroll]);
     vscrollElement.appendChild(verticalScrollContainer.canvas);
 }
+
+document.addEventListener("DOMContentLoaded", function(event) { 
+    var delayInMilliseconds = 5000; // 5 second
+
+    unitController.worldRange = worldRange;
+
+    setTimeout(function() {
+        const start = performance.now();
+        // @ts-ignore
+        timeGraphChart.adjustZoom(600, true);
+        const end = performance.now();
+    }, delayInMilliseconds);
+});
