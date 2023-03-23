@@ -155,7 +155,14 @@ export class TimeGraphStateComponent extends TimeGraphComponent<TimelineChart.Ti
             this._options.width = opts.width;
             this._options.displayWidth = opts.displayWidth;
         }
-        super.update();
+        if (this.displayObject.children.length > 0) {
+            this.displayObject.x = this._options.position.x;
+            this.displayObject.y = this._options.position.y;
+            this.displayObject.width = this._options.width;
+            this.displayObject.height = this._options.height;
+        } else {
+            super.update();
+        }
     }
 
     render() {
