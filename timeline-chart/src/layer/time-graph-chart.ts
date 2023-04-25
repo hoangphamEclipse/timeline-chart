@@ -1,6 +1,6 @@
 import * as PIXI from "pixi.js-legacy";
-import { TimeGraphAnnotationComponent, TimeGraphAnnotationComponentOptions, TimeGraphAnnotationStyle } from "../components/time-graph-annotation";
-import { TimeGraphComponent, TimeGraphRect, TimeGraphStyledRect } from "../components/time-graph-component";
+import { TimeGraphAnnotationComponent, TimeGraphAnnotationStyle } from "../components/time-graph-annotation";
+import { TimeGraphComponent, TimeGraphStyledRect } from "../components/time-graph-component";
 import { TimeGraphRectangle } from "../components/time-graph-rectangle";
 import { TimeGraphRow, TimeGraphRowStyle } from "../components/time-graph-row";
 import { TimeGraphStateComponent, TimeGraphStateStyle } from "../components/time-graph-state";
@@ -353,7 +353,6 @@ export class TimeGraphChart extends TimeGraphChartLayer {
          * Side effect - stage.width is always reset to renderer.width when this is called.  
          */
         this._zoomRangeChangedHandler = (zoomFactor) => {
-            this.updateScaleAndPosition();
             this.ensureRowLinesFitViewWidth();
             this.stateController.handleOnWorldRender();
         };
@@ -372,7 +371,6 @@ export class TimeGraphChart extends TimeGraphChartLayer {
     }
 
     update() {
-        this.updateScaleAndPosition();
         this._debouncedMaybeFetchNewData();
     }
 
@@ -382,7 +380,7 @@ export class TimeGraphChart extends TimeGraphChartLayer {
             delete this.zoomingSelection;
         } else if (this.mouseZooming) {
 
-            const x = this.getWorldPixel(this.mouseZoomingStart);
+            const x = this.undoScaling(this.getWorldPixel(this.mouseZoomingStart));
             const options = {
                 color: 0xbbbbbb,
                 opacity: 0.2,
@@ -391,7 +389,7 @@ export class TimeGraphChart extends TimeGraphChartLayer {
                     y: 0
                 },
                 height: Math.max(this.stateController.canvasDisplayHeight, this.rowController.totalHeight),
-                width: this.mouseEndX - this.mouseStartX
+                width: this.undoScaling((this.mouseEndX - this.mouseStartX))
             };
 
             if (!this.zoomingSelection) {
@@ -532,6 +530,7 @@ export class TimeGraphChart extends TimeGraphChartLayer {
                 if (!fine && this._coarseResolutionFactor !== FINE_RESOLUTION_FACTOR) {
                     this._debouncedMaybeFetchNewDataFine();
                 }
+                this.stateController.resetScale();
             }
             // After we build the new world from new data, execute render handlers.
             // Only execute after first, coarse render.  Don't need to repeat after second, fine render.
@@ -540,67 +539,6 @@ export class TimeGraphChart extends TimeGraphChartLayer {
             // no row to update for coarse resolution, try fine resolution
             this.maybeFetchNewData(update, true);
         }
-    }
-
-    protected updateScaleAndPosition() {
-        this.rowComponents.forEach((rowComponent) => {
-            const row = rowComponent.model;
-            if (rowComponent) {
-                const opts: TimeGraphRect = {
-                    height: this.rowController.rowHeight,
-                    position: {
-                        x: 0,
-                        y: rowComponent.position.y
-                    },
-                    width: this.stateController.canvasDisplayWidth
-                }
-                rowComponent.update(opts);
-            }
-            let lastX: number | undefined;
-            let lastTime: bigint | undefined;
-            let lastBlank = false;
-            row?.states.forEach((state: TimelineChart.TimeGraphState, elementIndex: number) => {
-                const el = rowComponent.getStateById(state.id);
-                const start = state.range.start;
-                const xStart = this.getWorldPixel(start, true);
-                if (el) {
-                    const end = state.range.end;
-                    const xEnd = this.getWorldPixel(end, true);
-                    const width = Math.max(1, xEnd - xStart);
-                    const opts: TimeGraphStyledRect = {
-                        height: el.height,
-                        position: {
-                            x: xStart,
-                            y: el.position.y
-                        },
-                        width,
-                        displayWidth: width
-                    };
-                    el.update(opts);
-                }
-                if (rowComponent && row.gapStyle) {
-                    this.updateGap(state, rowComponent, row.gapStyle, xStart, lastX, lastTime, lastBlank);
-                }
-                // Does clamping xEnd effect lastX calculation in some way?
-                lastX = Math.max(xStart + 1, this.getWorldPixel(state.range.end));
-                lastTime = state.range.end;
-                lastBlank = (state.data?.style === undefined);
-            });
-            row?.annotations.forEach((annotation: TimelineChart.TimeGraphAnnotation, elementIndex: number) => {
-                const el = rowComponent.getAnnotationById(annotation.id);
-                if (el) {
-                    // only handle ticks for now
-                    const start = annotation.range.start;
-                    const opts: TimeGraphAnnotationComponentOptions = {
-                        position: {
-                            x: this.getWorldPixel(start),
-                            y: el.displayObject.y
-                        }
-                    }
-                    el.update(opts);
-                }
-            });
-        });
     }
 
     protected handleSelectedStateChange() {
@@ -990,6 +928,7 @@ export class TimeGraphChart extends TimeGraphChartLayer {
      * This is a hacky solution that triggers every view range change.
      */
     protected ensureRowLinesFitViewWidth = () => {
+        const newRowWidth = this.stateController.canvasDisplayWidth / this.stateController.scaleFactor;
         this.rowComponents.forEach(rowComponent => {
             rowComponent.update({
                 height: this.rowController.rowHeight,
@@ -997,7 +936,7 @@ export class TimeGraphChart extends TimeGraphChartLayer {
                     x: -this.stateController.positionOffset.x,
                     y: rowComponent.position.y
                 },
-                width: this.stateController.canvasDisplayWidth,
+                width: newRowWidth,
             });
         })
 

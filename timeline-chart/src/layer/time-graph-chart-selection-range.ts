@@ -44,8 +44,12 @@ export class TimeGraphChartSelectionRange extends TimeGraphViewportLayer {
 
     update() {
         if (this.unitController.selectionRange) {
-            const firstCursorPosition = this.getWorldPixel(this.unitController.selectionRange.start);
-            const secondCursorPosition = this.getWorldPixel(this.unitController.selectionRange.end);
+            /**
+             * When user selects a range on the timeline chart, the selection position must corresponds to the cursor of the user,
+             * and not the timeline chart itself since scaling might be applied.
+             */
+            let firstCursorPosition = this.undoScaling(this.getWorldPixel(this.unitController.selectionRange.start));
+            const secondCursorPosition = this.undoScaling(this.getWorldPixel(this.unitController.selectionRange.end));
             if (secondCursorPosition !== firstCursorPosition) {
                 if (!this.selectionRange) {
                     this.selectionRange = new TimeGraphRectangle({

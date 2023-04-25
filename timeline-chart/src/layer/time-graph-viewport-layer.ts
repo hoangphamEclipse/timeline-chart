@@ -4,7 +4,6 @@ import { TimeGraphStateController } from '../time-graph-state-controller';
 import { TimeGraphUnitController } from '../time-graph-unit-controller';
 
 export abstract class TimeGraphViewportLayer extends TimeGraphLayer {
-
     constructor(id: string) {
         super(id);
     }
@@ -28,9 +27,21 @@ export abstract class TimeGraphViewportLayer extends TimeGraphLayer {
         return this.getPixel(diff);
     };
 
+    /**
+     * Find the position (in pixel) of coordinate before scaling was applied. Useful for
+     * finding the mouse position when user clicked on a scaled chart.
+     *
+     * @param position pixel relative to world range, after scaling was applied
+     * @returns
+     */
+    protected undoScaling = (position: number): number => {
+        return Math.floor(position / this.stateController.scaleFactor);
+    }
+
     initializeLayer(canvas: HTMLCanvasElement, stage: PIXI.Container, stateController: TimeGraphStateController, unitController: TimeGraphUnitController) {
         super.initializeLayer(canvas, stage, stateController, unitController);
         this.stateController.onPositionChanged(this.shiftStage);
+        this.stateController.onScaleFactorChange(this.scaleStage);
     }
 
     protected shiftStage = () => {
@@ -40,4 +51,10 @@ export abstract class TimeGraphViewportLayer extends TimeGraphLayer {
         this.layer.position.x = this.stateController.positionOffset.x;
     }
 
+    protected scaleStage = () => {
+        if (this.layer.scale === undefined || this.layer.scale === null) {
+            return;
+        }
+        this.layer.scale.x = this.stateController.scaleFactor;
+    }
 }
